@@ -22,6 +22,7 @@ type ping struct {
 	returnUrl    string
 	authUrl      string
 	audience     string
+	nonce        string
 }
 
 func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, error) {
@@ -80,13 +81,12 @@ func (p *ping) generateAuthToken(subject string, r *http.Request) (string, error
 	query := url.Values{}
 	query.Set("origDest", fmt.Sprintf("%s%s%s", "https://", r.Host, r.URL.String()))
 	origDest := query.Encode()
-	nonce := rand.String(30)
+	p.nonce = rand.String(30)
 
 	claims := jwt.NewClaim()
 	claims.Set("idpAccountId", p.idpAccountId)
 	claims.Set("returnUrl", fmt.Sprintf("%s%s%s", p.returnUrl, "?", origDest))
-	claims.Set("dst", origDest)
-	claims.Set("nonce", nonce)
+	claims.Set("nonce", p.nonce)
 	claims.Set("sub", subject)
 	claims.Set("aud", p.audience)
 	claims.SetTime("iat", time.Now())
@@ -157,17 +157,18 @@ func (p *ping) Init(r *http.Request, rw http.ResponseWriter) {
 	p.authUrl = pingConfig.AuthUrl
 }
 
-func (p *ping) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) {
+func (p *ping) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) (string, error) {
 	rv, err := p.generatePostHtml(subject, r)
 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Failed to generate post html %s", err.Error()), "error")
 		rw.WriteHeader(http.StatusInternalServerError)
-		return
+		return "", err
 	}
 
 	rw.Write(rv.Bytes())
+	return p.nonce, nil
 }
 
 func (p *ping) ProcessAuthenticationResult(r *http.Request, rw http.ResponseWriter) error {

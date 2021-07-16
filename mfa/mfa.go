@@ -35,7 +35,7 @@ type Config struct {
 
 type provider interface {
 	Init(*http.Request, http.ResponseWriter)
-	SendAuthenticationRedirect(*http.Request, http.ResponseWriter, string)
+	SendAuthenticationRedirect(*http.Request, http.ResponseWriter, string) (string, error)
 	ProcessAuthenticationResult(*http.Request, http.ResponseWriter) error
 }
 
