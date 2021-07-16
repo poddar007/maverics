@@ -5,7 +5,7 @@ import (
 )
 
 const DUO = "duo"
-const PING = "ping"
+const PING = "pingone"
 
 type duoConfig struct {
 	ClientId     string `json:"client_id"`
