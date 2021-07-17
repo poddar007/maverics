@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,17 +21,6 @@ type duo struct {
 	redirectUrl  string
 	failOpen     bool
 	oidcState    string
-}
-
-func logMessage(message string, level string) {
-	switch level {
-	case "debug":
-		log.Printf("%s", message)
-	case "info":
-		log.Printf("%s", message)
-	default:
-		log.Printf("%s", message)
-	}
 }
 
 func (d *duo) isDuoHealthy() bool {
@@ -184,12 +172,12 @@ func (d *duo) Init(r *http.Request, rw http.ResponseWriter) {
 	logMessage(fmt.Sprintf("%v", d), "info")
 }
 
-func (d *duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) (string, error) {
+func (d *duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) error {
 	if !d.isDuoHealthy() {
 		if !d.failOpen {
 			logMessage(fmt.Sprintf("Duo is unhealthy, failOpen is set to false"), "error")
 			rw.WriteHeader(http.StatusInternalServerError)
-			return "", errors.New("Duo is unhealthy, failOpen is set to false")
+			return errors.New("Duo is unhealthy, failOpen is set to false")
 		} else {
 			logMessage(fmt.Sprintf("Duo is unhealthy, failOpen is set to true"), "error")
 		}
@@ -201,12 +189,12 @@ func (d *duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Failed generating Duo Auth redirect url %s", err.Error()), "error")
 		rw.WriteHeader(http.StatusInternalServerError)
-		return "", errors.Wrap(err, errors.New("Failed to generate Duo Auth redirect url"))
+		return errors.Wrap(err, errors.New("Failed to generate Duo Auth redirect url"))
 	}
 
 	logMessage(fmt.Sprintf("Duo Auth Redirect Url %s", authUrl.String()), "info")
 	http.Redirect(rw, r, authUrl.String(), http.StatusFound)
-	return d.oidcState, nil
+	return nil
 }
 
 func (d *duo) ProcessAuthenticationResult(r *http.Request, rw http.ResponseWriter) error {

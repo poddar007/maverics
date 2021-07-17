@@ -4,6 +4,7 @@ import (
 	"Maverics/jwt"
 	"Maverics/rand"
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,15 +23,14 @@ type ping struct {
 	returnUrl    string
 	authUrl      string
 	audience     string
-	nonce        string
 }
 
-func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, error) {
-	jwtToken, err := p.generateAuthToken(subject, r)
+func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, http.Cookie, error) {
+	jwtToken, cookie, err := p.generateAuthToken(subject, r)
 	var rv bytes.Buffer
 
 	if err != nil {
-		return rv, err
+		return rv, http.Cookie{}, err
 	}
 
 	const html = `
@@ -53,7 +53,7 @@ func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Failed to parse html template %s", err.Error()), "error")
-		return rv, err
+		return rv, http.Cookie{}, err
 	}
 
 	htmlData := struct {
@@ -71,22 +71,19 @@ func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Failed to execute template %s", err.Error()), "error")
-		return rv, err
+		return rv, http.Cookie{}, err
 	}
 
-	return rv, nil
+	return rv, cookie, nil
 }
 
-func (p *ping) generateAuthToken(subject string, r *http.Request) (string, error) {
-	query := url.Values{}
-	query.Set("origDest", fmt.Sprintf("%s%s%s", "https://", r.Host, r.URL.String()))
-	origDest := query.Encode()
-	p.nonce = rand.String(30)
+func (p *ping) generateAuthToken(subject string, r *http.Request) (string, http.Cookie, error) {
+	hash, cookie, err := p.WriteStateCookie(r)
 
 	claims := jwt.NewClaim()
 	claims.Set("idpAccountId", p.idpAccountId)
-	claims.Set("returnUrl", fmt.Sprintf("%s%s%s", p.returnUrl, "?", origDest))
-	claims.Set("nonce", p.nonce)
+	claims.Set("returnUrl", p.returnUrl)
+	claims.Set("nonce", hash)
 	claims.Set("sub", subject)
 	claims.Set("aud", p.audience)
 	claims.SetTime("iat", time.Now())
@@ -97,7 +94,7 @@ func (p *ping) generateAuthToken(subject string, r *http.Request) (string, error
 	if err != nil {
 		errors.Wrap(err, errors.New("Failed to base64 decode ping secret"))
 		logMessage(fmt.Sprintf("Failed to base64 decode ping secret %s", err.Error()), "error")
-		return "", err
+		return "", http.Cookie{}, err
 	}
 
 	algorithm := jwt.HmacSha256(string(key))
@@ -106,12 +103,12 @@ func (p *ping) generateAuthToken(subject string, r *http.Request) (string, error
 	if err != nil {
 		errors.Wrap(err, errors.New("Failed signing JWT Auth token"))
 		logMessage(fmt.Sprintf("Failed signing JWT Auth token %s", err.Error()), "error")
-		return "", err
+		return "", http.Cookie{}, err
 	}
 
 	logMessage(fmt.Sprintf("Generate Ping Auth Token %s", string(signedToken)), "info")
 
-	return signedToken, nil
+	return signedToken, cookie, nil
 }
 
 func (p *ping) parseConfigFile() (pingConfig, error) {
@@ -157,20 +154,118 @@ func (p *ping) Init(r *http.Request, rw http.ResponseWriter) {
 	p.authUrl = pingConfig.AuthUrl
 }
 
-func (p *ping) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) (string, error) {
-	rv, err := p.generatePostHtml(subject, r)
+func (p *ping) WriteStateCookie(r *http.Request) (string, http.Cookie, error) {
+	type stateObject struct {
+		nonce       string `json:"nonce"`
+		destination string `json:"destination"`
+	}
+
+	origDest := fmt.Sprintf("%s%s%s", "https://", r.Host, r.URL.String())
+	state := stateObject{
+		destination: origDest,
+		nonce:       rand.String(30),
+	}
+
+	bytes, err := json.Marshal(state)
+
+	if err != nil {
+		logMessage(fmt.Sprintf("Failed to encode state object %s", err.Error()), "error")
+		return "", http.Cookie{}, err
+	}
+
+	logMessage(fmt.Sprintf("Writing cookie with state variable %s", string(bytes)), "debug")
+	hash := sha256.New().Sum(bytes)
+	logMessage(fmt.Sprintf("sha256 hash of the state object %s", hash), "debug")
+
+	b64state := base64.RawStdEncoding.EncodeToString(bytes)
+
+	cookie := http.Cookie{
+		Name:     "maverics_nonce",
+		Value:    string(b64state),
+		Domain:   "poddar.club",
+		Expires:  time.Time{},
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	return string(hash), cookie, nil
+}
+
+func (p *ping) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) error {
+	rv, cookie, err := p.generatePostHtml(subject, r)
 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Failed to generate post html %s", err.Error()), "error")
 		rw.WriteHeader(http.StatusInternalServerError)
-		return "", err
+		return err
 	}
 
+	http.SetCookie(rw, &cookie)
 	rw.Write(rv.Bytes())
-	return p.nonce, nil
+	return nil
+}
+
+func (p *ping) decodeValidateJwt(jwtToken string) (*jwt.Claims, error) {
+	key, err := base64.StdEncoding.DecodeString(p.clientSecret)
+
+	if err != nil {
+		errors.Wrap(err, errors.New("Failed to base64 decode ping secret"))
+		logMessage(fmt.Sprintf("Failed to base64 decode ping secret %s", err.Error()), "error")
+		return nil, err
+	}
+
+	algorithm := jwt.HmacSha256(string(key))
+	claims, err := algorithm.DecodeAndValidate(jwtToken)
+
+	return claims, err
 }
 
 func (p *ping) ProcessAuthenticationResult(r *http.Request, rw http.ResponseWriter) error {
+	purl, _ := url.Parse(p.returnUrl)
+
+	if r.URL.Path != purl.Path {
+		msg := fmt.Sprintf("%s: Unexpected Request, expected: %s", r.URL.Path, purl.Path)
+		logMessage(msg, "error")
+		rw.WriteHeader(http.StatusNotFound)
+		return errors.New(msg)
+	}
+
+	logMessage("Received Ping PPM Callback", "debug")
+
+	// The response from Ping is posted as ppm_response parameter
+	// We need to first parse the form
+	err := r.ParseForm()
+
+	if err != nil {
+		msg := fmt.Sprintf("Failed to parse posted form from ping %s", err.Error())
+		logMessage(msg, "error")
+		rw.WriteHeader(http.StatusInternalServerError)
+		return errors.Wrap(err, errors.New(msg))
+	}
+
+	jwt := r.Form.Get("ppm_response")
+
+	if jwt == "" {
+		msg := fmt.Sprintf("ppm_response not present in the form %v", r.Form)
+		logMessage(msg, "error")
+		rw.WriteHeader(http.StatusInternalServerError)
+		return errors.New(msg)
+	}
+
+	logMessage(fmt.Sprintf("Obtained ppm_response as JWT token %s", jwt), "debug")
+
+	claims, err := p.decodeValidateJwt(jwt)
+
+	if err != nil {
+		msg := fmt.Sprintf("ppm_response failed JWT validation %s", err.Error())
+		logMessage(msg, "error")
+		rw.WriteHeader(http.StatusInternalServerError)
+		return errors.Wrap(err, errors.New(msg))
+	}
+
+	logMessage(fmt.Sprintf("Successfully vaidated JWT token. Claims: %s", *claims), "debug")
+
 	return nil
 }

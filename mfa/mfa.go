@@ -1,6 +1,7 @@
 package mfa
 
 import (
+	"log"
 	"net/http"
 )
 
@@ -33,9 +34,20 @@ type Config struct {
 	MfaConfig mfaConfig `json:"mfa"`
 }
 
+func logMessage(message string, level string) {
+	switch level {
+	case "debug":
+		log.Printf("%s", message)
+	case "info":
+		log.Printf("%s", message)
+	default:
+		log.Printf("%s", message)
+	}
+}
+
 type provider interface {
 	Init(*http.Request, http.ResponseWriter)
-	SendAuthenticationRedirect(*http.Request, http.ResponseWriter, string) (string, error)
+	SendAuthenticationRedirect(*http.Request, http.ResponseWriter, string) error
 	ProcessAuthenticationResult(*http.Request, http.ResponseWriter) error
 }
 
