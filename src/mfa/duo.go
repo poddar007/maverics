@@ -1,19 +1,25 @@
 package mfa
 
 import (
-	"Maverics/jwt"
-	"Maverics/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/juju/errors"
 	"io/ioutil"
+	jwt2 "jwt"
 	"net/http"
 	"net/url"
 	"os"
+	"rand"
 	"time"
 )
 
-type duo struct {
+const ClientId = "DUO_CLIENT_ID"
+const ClientSecret = "DUO_CLIENT_SECRET"
+const ApiHost = "DUO_API_HOST"
+const AuthUrl = "DUO_AUTH_URL"
+const RedirectUrl = "DUO_REDIRECT_URL"
+
+type Duo struct {
 	clientId     string
 	clientSecret string
 	apiHost      string
@@ -23,7 +29,7 @@ type duo struct {
 	oidcState    string
 }
 
-func (d *duo) isDuoHealthy() bool {
+func (d *Duo) IsDuoHealthy() bool {
 	healthUrl := fmt.Sprintf("%s%s%s", "https://", d.apiHost, "/oauth/v1/health_check")
 	form := url.Values{}
 	form.Add("client_id", d.clientId)
@@ -56,7 +62,7 @@ func (d *duo) isDuoHealthy() bool {
 	}
 }
 
-func (d *duo) generateAuthRedirectUrl(subject string, r *http.Request) (*url.URL, error) {
+func (d *Duo) generateAuthRedirectUrl(subject string, r *http.Request) (*url.URL, error) {
 	authUrl := fmt.Sprintf("%s%s%s", "https://", d.apiHost, "/oauth/v1/authorize")
 	loc, err := url.Parse(authUrl)
 
@@ -73,13 +79,13 @@ func (d *duo) generateAuthRedirectUrl(subject string, r *http.Request) (*url.URL
 	return loc, nil
 }
 
-func (d *duo) generateAuthToken(subject string, r *http.Request) string {
+func (d *Duo) generateAuthToken(subject string, r *http.Request) string {
 	query := url.Values{}
 	query.Set("origDest", fmt.Sprintf("%s%s%s", "https://", r.Host, r.URL.String()))
 	origDest := query.Encode()
 	d.oidcState = rand.String(30)
 
-	claims := jwt.NewClaim()
+	claims := jwt2.NewClaim()
 	claims.Set("response_type", "code")
 	claims.Set("scope", "openid")
 	claims.Set("client_id", d.clientId)
@@ -89,7 +95,7 @@ func (d *duo) generateAuthToken(subject string, r *http.Request) string {
 	claims.Set("duo_uname", subject)
 	claims.SetTime("exp", time.Now().Add(5*time.Minute))
 
-	algorithm := jwt.HmacSha512(d.clientSecret)
+	algorithm := jwt2.HmacSha512(d.clientSecret)
 	signedToken, err := algorithm.Encode(claims)
 
 	if err != nil {
@@ -103,10 +109,10 @@ func (d *duo) generateAuthToken(subject string, r *http.Request) string {
 	return signedToken
 }
 
-func (d *duo) generateHealthToken() string {
+func (d *Duo) generateHealthToken() string {
 	audienceUrl := fmt.Sprintf("%s%s%s", "https://", d.apiHost, "/oauth/v1/health_check")
 
-	claims := jwt.NewClaim()
+	claims := jwt2.NewClaim()
 	claims.SetIssuer(d.clientId)
 	claims.SetSubject(d.clientId)
 	claims.SetAudience(audienceUrl)
@@ -114,7 +120,7 @@ func (d *duo) generateHealthToken() string {
 	claims.SetTime("iat", time.Now())
 	claims.SetTime("exp", time.Now().Add(5*time.Minute))
 
-	algorithm := jwt.HmacSha512(d.clientSecret)
+	algorithm := jwt2.HmacSha512(d.clientSecret)
 	signedToken, err := algorithm.Encode(claims)
 
 	if err != nil {
@@ -123,11 +129,23 @@ func (d *duo) generateHealthToken() string {
 		return ""
 	}
 
-	logMessage(fmt.Sprintf("Generate Duo Health Token %s", string(signedToken)), "info")
+	logMessage(fmt.Sprintf("Generate Duo Health Token %s", signedToken), "info")
 	return signedToken
 }
 
-func (d *duo) parseConfigFile() (duoConfig, error) {
+func (d *Duo) configFromEnvironment() (duoConfig, error) {
+	var duoConfig duoConfig
+
+	duoConfig.ClientId = os.Getenv(ClientId)
+	duoConfig.ClientSecret = os.Getenv(ClientSecret)
+	duoConfig.ApiHost = os.Getenv(ApiHost)
+	duoConfig.AuthUrl = os.Getenv(AuthUrl)
+	duoConfig.RedirectUrl = os.Getenv(RedirectUrl)
+
+	return duoConfig, nil
+}
+
+func (d *Duo) parseConfigFile() (duoConfig, error) {
 	var duoConfig duoConfig
 	var config Config
 	var file *os.File
@@ -154,13 +172,24 @@ func (d *duo) parseConfigFile() (duoConfig, error) {
 	return config.MfaConfig.Duo, nil
 }
 
-func (d *duo) Init(r *http.Request, rw http.ResponseWriter) {
-	duoConfig, err := d.parseConfigFile()
+func (d *Duo) Init() error {
+	configFile := os.Getenv("CONFIG_FILE")
+
+	var duoConfig duoConfig
+	var err error
+
+	if configFile != "" {
+		duoConfig, err = d.parseConfigFile()
+	} else if os.Getenv(ClientId) != "" {
+		duoConfig, err = d.configFromEnvironment()
+	} else {
+		panic("We need the configuration either in configuration file or as environment variables")
+	}
 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Error parsing config file %s", err.Error()), "error")
-		rw.WriteHeader(http.StatusInternalServerError)
+		return err
 	}
 
 	d.clientId = duoConfig.ClientId
@@ -170,10 +199,11 @@ func (d *duo) Init(r *http.Request, rw http.ResponseWriter) {
 	d.redirectUrl = duoConfig.RedirectUrl
 	d.failOpen = duoConfig.FailOpen
 	logMessage(fmt.Sprintf("%v", d), "info")
+	return nil
 }
 
-func (d *duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) error {
-	if !d.isDuoHealthy() {
+func (d *Duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter, subject string) error {
+	if !d.IsDuoHealthy() {
 		if !d.failOpen {
 			logMessage(fmt.Sprintf("Duo is unhealthy, failOpen is set to false"), "error")
 			rw.WriteHeader(http.StatusInternalServerError)
@@ -197,7 +227,7 @@ func (d *duo) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWriter
 	return nil
 }
 
-func (d *duo) ProcessAuthenticationResult(r *http.Request, rw http.ResponseWriter) error {
+func (d *Duo) ProcessAuthenticationResult(r *http.Request, rw http.ResponseWriter) error {
 	q := r.URL.Query()
 	code := q.Get("code")
 	state := q.Get("state")

@@ -1,8 +1,6 @@
 package mfa
 
 import (
-	"Maverics/jwt"
-	"Maverics/rand"
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,9 +9,11 @@ import (
 	"github.com/juju/errors"
 	"html/template"
 	"io/ioutil"
+	jwt2 "jwt"
 	"net/http"
 	"net/url"
 	"os"
+	"rand"
 	"time"
 )
 
@@ -80,7 +80,7 @@ func (p *ping) generatePostHtml(subject string, r *http.Request) (bytes.Buffer, 
 func (p *ping) generateAuthToken(subject string, r *http.Request) (string, http.Cookie, error) {
 	hash, cookie, err := p.WriteStateCookie(r)
 
-	claims := jwt.NewClaim()
+	claims := jwt2.NewClaim()
 	claims.Set("idpAccountId", p.idpAccountId)
 	claims.Set("returnUrl", p.returnUrl)
 	claims.Set("nonce", hash)
@@ -97,7 +97,7 @@ func (p *ping) generateAuthToken(subject string, r *http.Request) (string, http.
 		return "", http.Cookie{}, err
 	}
 
-	algorithm := jwt.HmacSha256(string(key))
+	algorithm := jwt2.HmacSha256(string(key))
 	signedToken, err := algorithm.Encode(claims)
 
 	if err != nil {
@@ -138,13 +138,13 @@ func (p *ping) parseConfigFile() (pingConfig, error) {
 	return config.MfaConfig.Ping, nil
 }
 
-func (p *ping) Init(r *http.Request, rw http.ResponseWriter) {
+func (p *ping) Init() error {
 	pingConfig, err := p.parseConfigFile()
 
 	if err != nil {
 		errors.Trace(err)
 		logMessage(fmt.Sprintf("Error parsing config file %s", err.Error()), "error")
-		rw.WriteHeader(http.StatusInternalServerError)
+		return err
 	}
 
 	p.clientSecret = pingConfig.ClientSecret
@@ -152,6 +152,8 @@ func (p *ping) Init(r *http.Request, rw http.ResponseWriter) {
 	p.returnUrl = pingConfig.ReturnUrl
 	p.audience = pingConfig.Audience
 	p.authUrl = pingConfig.AuthUrl
+
+	return nil
 }
 
 func (p *ping) WriteStateCookie(r *http.Request) (string, http.Cookie, error) {
@@ -207,7 +209,7 @@ func (p *ping) SendAuthenticationRedirect(r *http.Request, rw http.ResponseWrite
 	return nil
 }
 
-func (p *ping) decodeValidateJwt(jwtToken string) (*jwt.Claims, error) {
+func (p *ping) decodeValidateJwt(jwtToken string) (*jwt2.Claims, error) {
 	key, err := base64.StdEncoding.DecodeString(p.clientSecret)
 
 	if err != nil {
@@ -216,7 +218,7 @@ func (p *ping) decodeValidateJwt(jwtToken string) (*jwt.Claims, error) {
 		return nil, err
 	}
 
-	algorithm := jwt.HmacSha256(string(key))
+	algorithm := jwt2.HmacSha256(string(key))
 	claims, err := algorithm.DecodeAndValidate(jwtToken)
 
 	return claims, err

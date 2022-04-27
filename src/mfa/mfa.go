@@ -1,7 +1,7 @@
 package mfa
 
 import (
-	"log"
+	"maverics/log"
 	"net/http"
 )
 
@@ -35,18 +35,11 @@ type Config struct {
 }
 
 func logMessage(message string, level string) {
-	switch level {
-	case "debug":
-		log.Printf("%s", message)
-	case "info":
-		log.Printf("%s", message)
-	default:
-		log.Printf("%s", message)
-	}
+	log.Debug("msg("+level+")", message)
 }
 
 type provider interface {
-	Init(*http.Request, http.ResponseWriter)
+	Init() error
 	SendAuthenticationRedirect(*http.Request, http.ResponseWriter, string) error
 	ProcessAuthenticationResult(*http.Request, http.ResponseWriter) error
 }
@@ -55,7 +48,7 @@ func GetProvider(name string) provider {
 	var provider provider
 	switch name {
 	case DUO:
-		provider = &duo{}
+		provider = &Duo{}
 	case PING:
 		provider = &ping{}
 	}

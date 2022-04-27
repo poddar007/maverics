@@ -1,0 +1,81 @@
+version: 0.3
+listenAddress: ":8443"
+
+tls:
+  maverics:
+    certFile: /etc/maverics/certs/fullchain.pem
+    keyFile: /etc/maverics/certs/privkey.pem
+  grouper-tls:
+    caFile: /etc/maverics/certs/rootCA.pem
+
+session:
+  cookieDomain: poddar.club
+  maxLifetimeSeconds: 3600
+
+logger:
+  level: debug
+  logSessionID: true
+  timeFormat:  ANSIC
+
+appgateways:
+  - name: Sharepoint Auth0 Test
+    basePath: /
+    host: grouper.poddar.club
+    tls: grouper-tls
+    upstream: https://grouper
+    idps:
+      - name: auth0
+    policies:
+      - location: /
+        authentication:
+          isAuthenticatedSE:
+            funcName: isAuthenticated
+            file: /etc/maverics/strata.go
+          authenticateSE:
+            funcName: authenticate
+            file: /etc/maverics/strata.go
+        authorization:
+          allowAll: true
+  - name: Sharepoint Auth0 Test NoAccess
+    basePath: /
+    host: grouper-noaccess.poddar.club
+    tls: grouper-tls
+    upstream: https://grouper
+    idps:
+      - name: auth0
+    policies:
+      - location: /
+        authentication:
+          isAuthenticatedSE:
+            funcName: isAuthenticated
+            file: /etc/maverics/strata.go
+          authenticateSE:
+            funcName: authenticate
+            file: /etc/maverics/strata.go
+        authorization:
+          allowAll: true
+  - name: Duo Handler
+    basePath: /duo-handler/
+    host: maverics-test.poddar.club
+    policies:
+      - location: /
+        authentication:
+          isAuthenticatedSE:
+            funcName: isAuthenticatedDuo
+            file: /etc/maverics/duoHandler.go
+          authenticateSE:
+            funcName: authenticateDuo
+            file: /etc/maverics/duoHandler.go
+        authorization:
+          allowAll: true
+
+connectors:
+  - name: auth0
+    type: auth0
+    domain: https://dev-s5a8g-y0.us.auth0.com
+    oidcWellKnownURL: https://dev-s5a8g-y0.us.auth0.com/.well-known/openid-configuration
+    oauthRedirectURL: https://maverics-test.poddar.club/oidc-handler
+    oauthClientID: HbODHc6OH3tiwmfcYZaP13OVQ6aStY8N
+    oauthClientSecret: -MNfv4MLhdtUgQuRGYCt0q73CsoiPhlVdzVSIdxF_4dZ38UQ8AlY7y9jm2sqVncc
+    connection: Username-Password-Authentication
+    errorPage: https://dev-s5a8g-y0.us.auth0.com/error-401.html
