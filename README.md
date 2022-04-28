@@ -4,10 +4,10 @@ https://oneauthorize.sandbox.ey.com/api/runtime/token/v4
 
 ```json
 {
-    "entityId": "auth0nativetestaccount002@eysi5.com",
+    "entityId": "<user id obtained after primary authentication>",
     "entityTypeId": "MyEY-Users",
-    "clientId": "PJPM8VXGU86DEC5KIW28M",
-    "clientSecret": "b390bT-tAfoDU@EK%pfRIiTbJQt@CPuEfF@Pvdgd",
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
     "includeAssetAttributes": false,
     "includeAccessPolicy": false,
     "includeIdentity": false,
@@ -15,7 +15,7 @@ https://oneauthorize.sandbox.ey.com/api/runtime/token/v4
     "useCache": false,
     "contextData": {
         "application": [
-            "Sharepoint Auth0 Test"
+            "<application name, primarily obtained for application gateway name>"
         ]
     }
 }
