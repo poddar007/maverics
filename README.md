@@ -2,6 +2,7 @@
 
 https://oneauthorize.sandbox.ey.com/api/runtime/token/v4
 
+```json
 {
     "entityId": "auth0nativetestaccount002@eysi5.com",
     "entityTypeId": "MyEY-Users",
@@ -18,3 +19,4 @@ https://oneauthorize.sandbox.ey.com/api/runtime/token/v4
         ]
     }
 }
+```
