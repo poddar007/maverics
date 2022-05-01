@@ -1,0 +1,169 @@
+# Please edit the object below. Lines beginning with a '#' will be ignored,
+# and an empty file will abort the edit. If an error occurs while saving this file will be
+# reopened with the relevant failures.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "21"
+  creationTimestamp: "2022-03-26T00:25:24Z"
+  generation: 25
+  labels:
+    app: grouper
+  name: grouper
+  namespace: default
+  resourceVersion: "14743475"
+  uid: 607c940f-2346-4853-bb08-1a76361c6fcd
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: grouper
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: grouper
+    spec:
+      containers:
+      - env:
+        - name: GROUPER_UI
+          value: "true"
+        - name: GROUPER_WS
+          value: "true"
+        - name: GROUPER_SCIM
+          value: "true"
+        - name: GROUPER_DAEMON
+          value: "true"
+        - name: GROUPER_RUN_TOMEE
+          value: "true"
+        - name: GROUPER_RUN_APACHE
+          value: "true"
+        - name: GROUPER_RUN_SHIB_SP
+          value: "false"
+        - name: GROUPER_UI_GROUPER_AUTH
+          value: "true"
+        - name: GROUPER_WS_GROUPER_AUTH
+          value: "true"
+        - name: GROUPER_GSH_CHECK_USER
+          value: "false"
+        - name: GROUPER_SCIM_GROUPER_AUTH
+          value: "true"
+        - name: GROUPER_UI_CONFIGURATION_EDITOR_SOURCEIPADDRESSES
+          value: 0.0.0.0/0
+        - name: GROUPER_DATABASE_URL_FILE
+          value: /run/secrets/dburl/dburl.txt
+        - name: GROUPER_DATABASE_USERNAME_FILE
+          value: /run/secrets/dbuser/dburl.txt
+        - name: GROUPER_AUTO_DDL_UPTOVERSION
+          value: v2.6.*
+        - name: GROUPER_DATABASE_PASSWORD_FILE
+          value: /run/secrets/dbpass/dbpass.txt
+        - name: GROUPER_MORPHSTRING_ENCRYPT_KEY_FILE
+          value: /run/secrets/morphstring/morphString.txt
+        - name: GROUPER_SSL_CERT_FILE
+          value: /run/secrets/groupercert/cert.pem
+        - name: GROUPER_SSL_KEY_FILE
+          value: /run/secrets/grouperkey/privkey.pem
+        - name: GROUPER_SSL_USE_CHAIN_FILE
+          value: "false"
+        - name: GROUPER_SSL_USE_STAPLING
+          value: "false"
+        - name: GROUPER_APACHE_SERVER_NAME
+          value: https://grouper.poddar.club:443
+        image: i2incommon/grouper:2.6.8
+        imagePullPolicy: IfNotPresent
+        name: grouper
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /run/secrets/dburl
+          name: db-url
+          readOnly: true
+        - mountPath: /run/secrets/dbuser
+          name: db-user
+          readOnly: true
+        - mountPath: /run/secrets/dbpass
+          name: db-pass
+          readOnly: true
+        - mountPath: /run/secrets/morphstring
+          name: morph-string
+          readOnly: true
+        - mountPath: /run/secrets/groupercert
+          name: grouper-cert
+          readOnly: true
+        - mountPath: /run/secrets/grouperkey
+          name: grouper-key
+          readOnly: true
+        - mountPath: /run/secrets/groupercertchain
+          name: grouper-cert-chain
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: db-url
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: db-url
+      - name: db-user
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: db-user
+      - name: db-pass
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: db-pass
+      - name: morph-string
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: morph-string
+      - name: grouper-cert
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: grouper-cert
+      - name: grouper-key
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: grouper-key
+      - name: grouper-cert-chain
+        secret:
+          defaultMode: 420
+          optional: false
+          secretName: grouper-cert-chain
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2022-03-26T00:25:24Z"
+    lastUpdateTime: "2022-03-28T02:56:18Z"
+    message: ReplicaSet "grouper-86c454c97f" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2022-04-23T20:27:27Z"
+    lastUpdateTime: "2022-04-23T20:27:27Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  observedGeneration: 25
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
